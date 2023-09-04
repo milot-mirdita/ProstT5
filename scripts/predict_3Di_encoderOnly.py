@@ -18,11 +18,6 @@ import torch
 from torch import nn
 from transformers import T5EncoderModel, T5Tokenizer
 
-
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-print("Using device: {}".format(device))
-
-
 # Convolutional neural network (two convolutional layers)
 class CNN(nn.Module):
     def __init__( self ):
@@ -48,7 +43,7 @@ class CNN(nn.Module):
         return Yhat
 
 
-def get_T5_model(model_dir):
+def get_T5_model(device, model_dir):
     print("Loading T5 from: {}".format(model_dir))
     model = T5EncoderModel.from_pretrained(model_dir).to(device)
     model = model.eval()
@@ -141,16 +136,12 @@ def download_file(url,local_path):
     return None
 
     
-def load_predictor( weights_link="https://rostlab.org/~deepppi/prostt5/cnn_chkpnt/model.pt" ):
+def load_predictor(device, weights_link="https://rostlab.org/~deepppi/prostt5/cnn_chkpnt/model.pt"):
     model = CNN()
     checkpoint_p = Path.cwd() / "cnn_chkpnt" / "model.pt"
     # if no pre-trained model is available, yet --> download it
     if not checkpoint_p.exists():
         download_file(weights_link, checkpoint_p)
-
-    # Torch load will map back to device from state, which often is GPU:0.
-    # to overcome, need to explicitly map to active device
-    global device
 
     state = torch.load(checkpoint_p, map_location=device)
 
@@ -162,7 +153,7 @@ def load_predictor( weights_link="https://rostlab.org/~deepppi/prostt5/cnn_chkpn
     return model
 
 
-def get_embeddings( seq_path, out_path, model_dir, split_char, id_field, half_precision,    
+def get_embeddings( seq_path, out_path, device, model_dir, split_char, id_field, half_precision,
                    max_residues=4000, max_seq_len=1000, max_batch=100 ):
     
     seq_dict = dict()
@@ -172,8 +163,8 @@ def get_embeddings( seq_path, out_path, model_dir, split_char, id_field, half_pr
     seq_dict = read_fasta( seq_path, split_char, id_field )
     prefix = "<AA2fold>"
     
-    model, vocab = get_T5_model(model_dir)
-    predictor = load_predictor()
+    model, vocab = get_T5_model(device, model_dir)
+    predictor = load_predictor(device)
     
     if half_precision:
         model = model.half()
@@ -311,6 +302,9 @@ def create_arg_parser():
     return parser
 
 def main():
+    device     = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    print("Using device: {}".format(device))
+
     parser     = create_arg_parser()
     args       = parser.parse_args()
     
@@ -328,11 +322,12 @@ def main():
     assert not (half_precision and device=="cpu"), print("Running fp16 on CPU is not supported, yet")
     
     get_embeddings( 
-        seq_path, 
-        out_path, 
-        model_dir, 
-        split_char, 
-        id_field, 
+        seq_path,
+        out_path,
+        device,
+        model_dir,
+        split_char,
+        id_field,
         half_precision=half_precision,
         )
 
