@@ -49,6 +49,13 @@ def prediction_to_string(prediction):
 
 @app.route("/predict/<string:seq>", methods=["GET"])
 def predict(seq):
+    return predict_or_embed(seq, False);
+
+@app.route("/embed/<string:seq>", methods=["GET"])
+def embed(seq):
+    return predict_or_embed(seq, True);
+
+def predict_or_embed(seq, embed_only):
     seq_len = len(seq)
     if seq_len > max_prediction_length:
         return jsonify({"error": "Sequence length exceeds maximum length"}), 400
@@ -70,17 +77,21 @@ def predict(seq):
     residue_embedding = residue_embedding * token_encoding.attention_mask.unsqueeze(dim=-1)
     # slice off embedding of special token prepended before to each sequence
     residue_embedding = residue_embedding[:, 1:]
-    prediction = predictor(residue_embedding)
-    prediction = toCPU(torch.max(prediction, dim=1, keepdim=True)[1]).astype(np.byte)
-    prediction = prediction[0, :, 0:seq_len].squeeze()
 
-    json = jsonify(prediction_to_string(prediction))
+    if embed_only:
+        json = jsonify(residue_embedding.tolist()[0][:-1])
+    else:
+        prediction = predictor(residue_embedding)
+        prediction = toCPU(torch.max(prediction, dim=1, keepdim=True)[1]).astype(np.byte)
+        prediction = prediction[0, :, 0:seq_len].squeeze()
+        json = jsonify(prediction_to_string(prediction))
+        if device.type == "cuda":
+            del prediction
 
     if device.type == "cuda":
         del token_encoding
         del embedding_repr
         del residue_embedding
-        del prediction
         torch.cuda.empty_cache()
 
     return json
