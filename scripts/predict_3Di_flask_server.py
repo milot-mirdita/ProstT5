@@ -73,13 +73,16 @@ def predict_or_embed(seq, embed_only):
     token_encoding.attention_mask[0, seq_len + 1] = 0
     # extract last hidden states (=embeddings)
     residue_embedding = embedding_repr.last_hidden_state.detach()
-    # mask out padded elements in the attention output (can be non-zero) for further processing/prediction
-    residue_embedding = residue_embedding * token_encoding.attention_mask.unsqueeze(dim=-1)
     # slice off embedding of special token prepended before to each sequence
-    residue_embedding = residue_embedding[:, 1:]
+    residue_embedding = residue_embedding[:, 1:seq_len+1]
 
     if embed_only:
-        json = jsonify(residue_embedding.tolist()[0][:-1])
+        per_residue = residue_embedding.squeeze()
+        per_protein = per_residue.sum(axis=1) / seq_len
+        json = jsonify({
+            "per_residue": per_residue.tolist(),
+            "per_protein": per_protein.tolist()
+        })
     else:
         prediction = predictor(residue_embedding)
         prediction = toCPU(torch.max(prediction, dim=1, keepdim=True)[1]).astype(np.byte)
